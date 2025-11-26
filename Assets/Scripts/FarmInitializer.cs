@@ -53,6 +53,9 @@ public class FarmInitializer : MonoBehaviour
         // Create grass patches
         CreateGrass();
 
+        // Create outside trees around the farm
+        CreateOutsideTrees();
+
         // Create directional light if none exists
         if (FindFirstObjectByType<Light>() == null)
         {
@@ -113,14 +116,81 @@ public class FarmInitializer : MonoBehaviour
             ss.AddComponent<SaveSystem>();
         }
 
-        // Inventory UI placeholder (optional)
+        // Inventory
         if (FindFirstObjectByType<Inventory>() == null)
         {
             var inv = new GameObject("Inventory");
             inv.AddComponent<Inventory>();
         }
 
+        // Inventory UI (hotbar at bottom of screen)
+        if (FindFirstObjectByType<InventoryUIBehaviour>() == null)
+        {
+            var invUI = new GameObject("InventoryUI");
+            invUI.AddComponent<InventoryUIBehaviour>();
+        }
+
         Debug.Log("FarmInitializer: Initialization complete!");
+    }
+
+    void CreateOutsideTrees()
+    {
+        var treeContainer = new GameObject("OutsideTrees");
+
+        // Load outside-tree from prefabs folder
+        GameObject treePrefab = Resources.Load<GameObject>("prefabs/outside-tree");
+
+        if (treePrefab == null)
+        {
+            Debug.LogWarning("FarmInitializer: Could not load outside-tree prefab!");
+            return;
+        }
+
+        // Define 14 positions around the farm perimeter (outside planting area)
+        // Half at y=0, half at y=1 (higher position to avoid being under ground)
+        Vector3[] treePositions = new Vector3[]
+        {
+            new Vector3(-16f, 1f, -10f),   // Higher
+            new Vector3(-16f, 0f, 0f),     // Normal
+            new Vector3(-16f, 1f, 10f),    // Higher
+            new Vector3(-12f, 0f, -12f),   // Normal
+            new Vector3(-8f, 1f, 12f),     // Higher
+            new Vector3(0f, 0f, -12f),     // Normal
+            new Vector3(0f, 1f, 12f),      // Higher
+            new Vector3(8f, 0f, 12f),      // Normal
+            new Vector3(12f, 1f, -12f),    // Higher
+            new Vector3(16f, 0f, -10f),    // Normal
+            new Vector3(16f, 1f, 0f),      // Higher
+            new Vector3(16f, 0f, 10f),     // Normal
+            new Vector3(-12f, 1f, 12f),    // Higher
+            new Vector3(12f, 0f, 12f),     // Normal
+        };
+
+        // Names of trees to remove from the prefab
+        string[] treesToRemove = { "Fantazy_tree_008", "Fantazy_tree_009", "Fantazy_tree_010",
+                                   "Fantazy_tree_011", "Fantazy_tree_012", "Fantazy_tree_013" };
+
+        for (int i = 0; i < treePositions.Length; i++)
+        {
+            var tree = Instantiate(treePrefab);
+            tree.name = $"OutsideTree_{i}";
+            tree.transform.SetParent(treeContainer.transform);
+            tree.transform.position = treePositions[i];
+            tree.transform.rotation = Quaternion.Euler(0, Random.Range(0f, 360f), 0);
+            tree.transform.localScale = Vector3.one * Random.Range(0.8f, 1.2f);
+
+            // Remove unwanted Fantasy trees from this instance
+            foreach (string treeName in treesToRemove)
+            {
+                Transform unwanted = tree.transform.Find(treeName);
+                if (unwanted != null)
+                {
+                    Destroy(unwanted.gameObject);
+                }
+            }
+        }
+
+        Debug.Log($"FarmInitializer: Created {treePositions.Length} outside trees");
     }
 
     void CreateGrass()

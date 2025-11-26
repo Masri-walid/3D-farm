@@ -35,13 +35,21 @@ public class PlantingSpot : MonoBehaviour
         plantedCrop.Initialize(seedId, this);
     }
 
-    public Item Harvest()
+    public bool CanHarvest()
+    {
+        return plantedCrop != null && plantedCrop.IsFullyGrown();
+    }
+
+    public Item[] Harvest()
     {
         if (plantedCrop == null) return null;
-        var item = plantedCrop.Harvest();
-        Destroy(plantedCrop.gameObject);
-        plantedCrop = null;
-        return item;
+        var items = plantedCrop.Harvest();
+        if (items != null)
+        {
+            Destroy(plantedCrop.gameObject);
+            plantedCrop = null;
+        }
+        return items;
     }
 
     // For save/load

@@ -159,23 +159,23 @@ public class Crop : MonoBehaviour
         }
     }
 
-    public Item Harvest()
+    public bool IsFullyGrown()
     {
-        if (progress < 1f) return null; // not ready
+        return hasTransitioned; // Only big plants can be harvested
+    }
 
-        // Determine produce name based on seed type
-        string produceName = "Plant Produce";
-        if (seedId.Contains("seed"))
+    public Item[] Harvest()
+    {
+        // Only big plants (hasTransitioned) can be harvested
+        if (!hasTransitioned)
         {
-            produceName = seedId.Replace("_seed", "").Replace("_", " ");
-            // Capitalize first letter
-            if (produceName.Length > 0)
-            {
-                produceName = char.ToUpper(produceName[0]) + produceName.Substring(1);
-            }
+            Debug.Log("Plant is still small, cannot harvest yet!");
+            return null;
         }
 
-        var item = new Item { itemId = seedId + "_produce", displayName = produceName };
-        return item;
+        // Return both extraction and seeds
+        var extraction = new Item { itemId = "extraction", displayName = "Extraction", count = 1 };
+        var seeds = new Item { itemId = "plant_seed", displayName = "Plant Seed", count = 2 };
+        return new Item[] { extraction, seeds };
     }
 }
