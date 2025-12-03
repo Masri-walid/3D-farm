@@ -25,6 +25,16 @@ public class PlantingSpot : MonoBehaviour
 
     public bool HasCrop() => plantedCrop != null;
 
+    public bool HasSmallPlant()
+    {
+        return plantedCrop != null && plantedCrop.IsSmallPlant();
+    }
+
+    public bool HasBigPlant()
+    {
+        return plantedCrop != null && plantedCrop.IsBigPlant();
+    }
+
     public void Plant(string seedId)
     {
         if (plantedCrop != null) return;
@@ -35,9 +45,27 @@ public class PlantingSpot : MonoBehaviour
         plantedCrop.Initialize(seedId, this);
     }
 
+    public void WaterPlant()
+    {
+        if (plantedCrop != null && plantedCrop.IsSmallPlant())
+        {
+            plantedCrop.Water();
+        }
+    }
+
+    public bool CanWater()
+    {
+        return plantedCrop != null && plantedCrop.IsSmallPlant();
+    }
+
     public bool CanHarvest()
     {
-        return plantedCrop != null && plantedCrop.IsFullyGrown();
+        return plantedCrop != null;
+    }
+
+    public bool CanHarvestBig()
+    {
+        return plantedCrop != null && plantedCrop.IsBigPlant();
     }
 
     public Item[] Harvest()
@@ -56,7 +84,13 @@ public class PlantingSpot : MonoBehaviour
     public PlantingSpotState GetState()
     {
         if (plantedCrop == null) return new PlantingSpotState { planted = false };
-        return new PlantingSpotState { planted = true, seedId = plantedCrop.seedId, plantedAt = plantedCrop.plantedAt, timeToGrow = plantedCrop.timeToGrow };
+        return new PlantingSpotState {
+            planted = true,
+            seedId = plantedCrop.seedId,
+            plantedAt = plantedCrop.plantedAt,
+            timeToGrow = plantedCrop.timeToGrow,
+            isWatered = plantedCrop.IsBigPlant()
+        };
     }
 
     public void LoadState(PlantingSpotState s)
@@ -64,6 +98,10 @@ public class PlantingSpot : MonoBehaviour
         if (s == null || !s.planted) return;
         Plant(s.seedId);
         plantedCrop.ForceSetTime(s.plantedAt, s.timeToGrow);
+        if (s.isWatered)
+        {
+            plantedCrop.ForceSetWatered(true);
+        }
     }
 }
 
@@ -74,4 +112,5 @@ public class PlantingSpotState
     public string seedId;
     public double plantedAt;
     public float timeToGrow;
+    public bool isWatered;
 }

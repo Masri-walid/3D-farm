@@ -7,55 +7,117 @@ public class Inventory : MonoBehaviour
     public static Inventory Instance { get; private set; }
     public List<Item> items = new List<Item>();
 
+    // Slot-based inventory (9 slots for 3x3 grid)
+    public Item[] slots = new Item[9];
+
     void Awake()
     {
         if (Instance == null) Instance = this; else Destroy(gameObject);
         DontDestroyOnLoad(gameObject);
+
+        // Initialize slots
+        for (int i = 0; i < 9; i++)
+        {
+            slots[i] = null;
+        }
     }
 
     public void AddItem(Item item, int count = -1)
     {
-        // If count is not specified, use the item's existing count
         int amountToAdd = (count == -1) ? item.count : count;
 
-        var existing = items.FirstOrDefault(i => i.itemId == item.itemId);
-        if (existing != null)
+        // First, try to stack with existing item in slots
+        for (int i = 0; i < slots.Length; i++)
         {
-            existing.count += amountToAdd;
+            if (slots[i] != null && slots[i].itemId == item.itemId)
+            {
+                slots[i].count += amountToAdd;
+                Debug.Log($"Added {item.displayName} x{amountToAdd} to slot {i}. Total: {slots[i].count}");
+                UpdateItemsList();
+                return;
+            }
         }
-        else
+
+        // Find first empty slot
+        for (int i = 0; i < slots.Length; i++)
         {
-            item.count = amountToAdd;
-            items.Add(item);
+            if (slots[i] == null)
+            {
+                slots[i] = new Item { itemId = item.itemId, displayName = item.displayName, count = amountToAdd };
+                Debug.Log($"Added {item.displayName} x{amountToAdd} to empty slot {i}");
+                UpdateItemsList();
+                return;
+            }
         }
-        Debug.Log($"Added {item.displayName} x{amountToAdd}. Total: {items.FirstOrDefault(i => i.itemId == item.itemId)?.count}");
+
+        Debug.LogWarning("Inventory full! Could not add item.");
     }
 
     public void RemoveItem(string itemId, int count = 1)
     {
-        var existing = items.FirstOrDefault(i => i.itemId == itemId);
-        if (existing == null) return;
-        existing.count -= count;
-        if (existing.count <= 0) items.Remove(existing);
+        for (int i = 0; i < slots.Length; i++)
+        {
+            if (slots[i] != null && slots[i].itemId == itemId)
+            {
+                slots[i].count -= count;
+                if (slots[i].count <= 0)
+                {
+                    slots[i] = null;
+                }
+                UpdateItemsList();
+                return;
+            }
+        }
+    }
+
+    public void SwapSlots(int fromIndex, int toIndex)
+    {
+        if (fromIndex < 0 || fromIndex >= 9 || toIndex < 0 || toIndex >= 9) return;
+
+        var temp = slots[fromIndex];
+        slots[fromIndex] = slots[toIndex];
+        slots[toIndex] = temp;
+
+        UpdateItemsList();
+    }
+
+    public List<Item> GetSlotItems()
+    {
+        return slots.ToList();
+    }
+
+    void UpdateItemsList()
+    {
+        // Keep items list in sync with slots for save/load compatibility
+        items.Clear();
+        foreach (var slot in slots)
+        {
+            if (slot != null && slot.count > 0)
+            {
+                items.Add(slot);
+            }
+        }
     }
 
     public InventoryItem GetFirstSeed()
     {
-        // seeds are items whose id ends with "_seed"
-        var seed = items.FirstOrDefault(i => i.itemId.EndsWith("_seed"));
-        if (seed == null) return null;
-        return new InventoryItem { itemId = seed.itemId, displayName = seed.displayName };
+        for (int i = 0; i < slots.Length; i++)
+        {
+            if (slots[i] != null && slots[i].itemId.EndsWith("_seed") && slots[i].count > 0)
+            {
+                return new InventoryItem { itemId = slots[i].itemId, displayName = slots[i].displayName };
+            }
+        }
+        return null;
     }
 
     public static class InventoryUI
     {
-        // Minimal placeholder - you can expand with Unity UI if you want
         public static bool visible = false;
         public static void Toggle()
         {
             visible = !visible;
             Debug.Log("Inventory toggled: " + visible);
-            // Implement UI later
         }
     }
 }

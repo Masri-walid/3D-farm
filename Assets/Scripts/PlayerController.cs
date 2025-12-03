@@ -9,6 +9,7 @@ public class PlayerController : MonoBehaviour
     public float mouseSensitivity = 2f;
     public float interactDistance = 3f;
     public float holdDuration = 1f; // Time to hold E for interaction
+    public float waterDuration = 2f; // Time to hold R for watering
 
     CharacterController controller;
     float verticalVelocity = 0f;
@@ -21,11 +22,18 @@ public class PlayerController : MonoBehaviour
     PlantingSpot currentSpot = null;
     AudioSource audioSource;
     AudioClip cropsAudio;
+    AudioClip waterAudio;
+
+    // Watering interaction (R key)
+    float waterTimer = 0f;
+    bool isWatering = false;
+    PlantingSpot wateringSpot = null;
 
     // Progress bar UI
     Canvas progressCanvas;
     Image progressBarBackground;
     Image progressBarFill;
+    Text progressLabel;
 
     void Start()
     {
@@ -38,6 +46,7 @@ public class PlayerController : MonoBehaviour
         audioSource.loop = true;
         audioSource.playOnAwake = false;
         cropsAudio = Resources.Load<AudioClip>("Crops/crops audio");
+        waterAudio = Resources.Load<AudioClip>("Crops/water");
 
         // Create progress bar UI
         CreateProgressBar();
@@ -45,14 +54,12 @@ public class PlayerController : MonoBehaviour
 
     void CreateProgressBar()
     {
-        // Create canvas for progress bar
         var canvasObj = new GameObject("ProgressBarCanvas");
         progressCanvas = canvasObj.AddComponent<Canvas>();
         progressCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
         progressCanvas.sortingOrder = 200;
         canvasObj.AddComponent<CanvasScaler>();
 
-        // Background (dark border)
         var bgObj = new GameObject("ProgressBarBg");
         bgObj.transform.SetParent(progressCanvas.transform, false);
         var bgRect = bgObj.AddComponent<RectTransform>();
@@ -63,7 +70,6 @@ public class PlayerController : MonoBehaviour
         progressBarBackground = bgObj.AddComponent<Image>();
         progressBarBackground.color = new Color(0.2f, 0.2f, 0.2f, 0.9f);
 
-        // Fill bar (white)
         var fillObj = new GameObject("ProgressBarFill");
         fillObj.transform.SetParent(bgObj.transform, false);
         var fillRect = fillObj.AddComponent<RectTransform>();
@@ -75,50 +81,83 @@ public class PlayerController : MonoBehaviour
         progressBarFill = fillObj.AddComponent<Image>();
         progressBarFill.color = Color.white;
 
-        // Hide initially
+        // Label for action type
+        var labelObj = new GameObject("ProgressLabel");
+        labelObj.transform.SetParent(progressCanvas.transform, false);
+        var labelRect = labelObj.AddComponent<RectTransform>();
+        labelRect.anchorMin = new Vector2(0.5f, 0.5f);
+        labelRect.anchorMax = new Vector2(0.5f, 0.5f);
+        labelRect.anchoredPosition = new Vector2(0, -80);
+        labelRect.sizeDelta = new Vector2(200, 30);
+        progressLabel = labelObj.AddComponent<Text>();
+        progressLabel.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        progressLabel.fontSize = 18;
+        progressLabel.alignment = TextAnchor.MiddleCenter;
+        progressLabel.color = Color.white;
+        var outline = labelObj.AddComponent<Outline>();
+        outline.effectColor = Color.black;
+
         progressCanvas.gameObject.SetActive(false);
     }
 
-    void UpdateProgressBar(float progress)
+    void UpdateProgressBar(float progress, Color? fillColor = null)
     {
         if (progressBarFill != null)
         {
-            // Max width is 200 (204 - 4 for padding)
             float width = progress * 200f;
             progressBarFill.rectTransform.sizeDelta = new Vector2(width, 20);
+            if (fillColor.HasValue)
+                progressBarFill.color = fillColor.Value;
         }
     }
 
-    void ShowProgressBar(bool show)
+    void ShowProgressBar(bool show, string labelText = "")
     {
         if (progressCanvas != null)
         {
             progressCanvas.gameObject.SetActive(show);
+            if (progressLabel != null)
+                progressLabel.text = labelText;
         }
     }
 
     void Update()
     {
-        Move();
-        Look();
+        // Only allow movement/look when inventory is closed
+        if (!IsInventoryOpen())
+        {
+            Move();
+            Look();
+        }
+
         HandleInteraction();
+        HandleWatering();
+
         if (Input.GetKeyDown(KeyCode.I) && InventoryUIBehaviour.Instance != null)
             InventoryUIBehaviour.Instance.Toggle();
         if (Input.GetKeyDown(KeyCode.F5) && SaveSystem.Instance != null) SaveSystem.Instance.Save();
         if (Input.GetKeyDown(KeyCode.F9) && SaveSystem.Instance != null) SaveSystem.Instance.Load();
     }
 
+    bool IsInventoryOpen()
+    {
+        return InventoryUIBehaviour.Instance != null &&
+               InventoryUIBehaviour.Instance.gameObject.activeInHierarchy &&
+               Cursor.lockState == CursorLockMode.None;
+    }
+
     void HandleInteraction()
     {
+        if (IsInventoryOpen()) return;
+
         PlantingSpot spot = GetLookedAtSpot();
 
-        if (Input.GetKey(KeyCode.E) && spot != null)
+        if (Input.GetKey(KeyCode.E) && spot != null && !isWatering)
         {
-            // Check if we can interact (plant or harvest)
             bool canInteract = false;
-            if (spot.HasCrop() && spot.CanHarvest())
+            if (spot.HasCrop())
             {
-                canInteract = true; // Can harvest big plant
+                canInteract = true; // Can harvest any plant
             }
             else if (!spot.HasCrop() && Inventory.Instance.GetFirstSeed() != null)
             {
@@ -129,31 +168,26 @@ public class PlayerController : MonoBehaviour
             {
                 if (!isHolding || currentSpot != spot)
                 {
-                    // Start holding
                     isHolding = true;
                     currentSpot = spot;
                     holdTimer = 0f;
 
-                    // Play audio
                     if (cropsAudio != null && !audioSource.isPlaying)
                     {
                         audioSource.clip = cropsAudio;
                         audioSource.Play();
                     }
 
-                    // Show progress bar
-                    ShowProgressBar(true);
+                    string actionLabel = spot.HasCrop() ? "Harvesting..." : "Planting...";
+                    ShowProgressBar(true, actionLabel);
                 }
 
                 holdTimer += Time.deltaTime;
-
-                // Update progress bar
                 float progress = Mathf.Clamp01(holdTimer / holdDuration);
-                UpdateProgressBar(progress);
+                UpdateProgressBar(progress, Color.white);
 
                 if (holdTimer >= holdDuration)
                 {
-                    // Complete interaction
                     PerformInteraction(spot);
                     ResetHold();
                 }
@@ -163,9 +197,51 @@ public class PlayerController : MonoBehaviour
                 ResetHold();
             }
         }
-        else
+        else if (!Input.GetKey(KeyCode.E))
         {
             ResetHold();
+        }
+    }
+
+    void HandleWatering()
+    {
+        if (IsInventoryOpen()) return;
+
+        PlantingSpot spot = GetLookedAtSpot();
+
+        if (Input.GetKey(KeyCode.R) && spot != null && spot.CanWater() && !isHolding)
+        {
+            if (!isWatering || wateringSpot != spot)
+            {
+                isWatering = true;
+                wateringSpot = spot;
+                waterTimer = 0f;
+
+                if (waterAudio != null && !audioSource.isPlaying)
+                {
+                    audioSource.clip = waterAudio;
+                    audioSource.Play();
+                }
+
+                ShowProgressBar(true, "Watering...");
+            }
+
+            waterTimer += Time.deltaTime;
+            float progress = Mathf.Clamp01(waterTimer / waterDuration);
+            UpdateProgressBar(progress, new Color(0.3f, 0.7f, 1f)); // Blue for water
+
+            if (waterTimer >= waterDuration)
+            {
+                spot.WaterPlant();
+                ResetWater();
+
+                if (InventoryUIBehaviour.Instance != null)
+                    InventoryUIBehaviour.Instance.Refresh();
+            }
+        }
+        else if (!Input.GetKey(KeyCode.R))
+        {
+            ResetWater();
         }
     }
 
@@ -191,6 +267,9 @@ public class PlayerController : MonoBehaviour
                 {
                     Inventory.Instance.AddItem(item);
                 }
+
+                if (InventoryUIBehaviour.Instance != null)
+                    InventoryUIBehaviour.Instance.Refresh();
             }
         }
         else
@@ -200,6 +279,9 @@ public class PlayerController : MonoBehaviour
             {
                 spot.Plant(seed.itemId);
                 Inventory.Instance.RemoveItem(seed.itemId, 1);
+
+                if (InventoryUIBehaviour.Instance != null)
+                    InventoryUIBehaviour.Instance.Refresh();
             }
         }
     }
@@ -211,13 +293,34 @@ public class PlayerController : MonoBehaviour
             isHolding = false;
             holdTimer = 0f;
             currentSpot = null;
-            if (audioSource.isPlaying)
+            if (audioSource.isPlaying && audioSource.clip == cropsAudio)
             {
                 audioSource.Stop();
             }
-            // Hide progress bar
-            ShowProgressBar(false);
-            UpdateProgressBar(0f);
+            if (!isWatering)
+            {
+                ShowProgressBar(false);
+                UpdateProgressBar(0f);
+            }
+        }
+    }
+
+    void ResetWater()
+    {
+        if (isWatering)
+        {
+            isWatering = false;
+            waterTimer = 0f;
+            wateringSpot = null;
+            if (audioSource.isPlaying && audioSource.clip == waterAudio)
+            {
+                audioSource.Stop();
+            }
+            if (!isHolding)
+            {
+                ShowProgressBar(false);
+                UpdateProgressBar(0f);
+            }
         }
     }
 
@@ -244,5 +347,4 @@ public class PlayerController : MonoBehaviour
         pitch = Mathf.Clamp(pitch, -85f, 85f);
         if (cam) cam.localEulerAngles = new Vector3(pitch, 0, 0);
     }
-
 }
